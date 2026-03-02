@@ -5,7 +5,7 @@ Coverage:
   constructor failure recovery, return value verification, edge cases.
   _get_backend() — backend selection logic with env var combinations.
   _get_parallel_client() — Parallel client configuration, singleton caching.
-  check_web_api_key() — unified availability check.
+  check_web_api_key() — unified availability check across all web backends.
 """
 
 import os
@@ -20,14 +20,27 @@ class TestFirecrawlClientConfig:
         """Reset client and env vars before each test."""
         import tools.web_tools
         tools.web_tools._firecrawl_client = None
-        for key in ("FIRECRAWL_API_KEY", "FIRECRAWL_API_URL"):
+        tools.web_tools._firecrawl_client_config = None
+        for key in (
+            "FIRECRAWL_API_KEY",
+            "FIRECRAWL_API_URL",
+            "TOOL_GATEWAY_URL",
+            "TOOL_GATEWAY_USER_TOKEN",
+        ):
             os.environ.pop(key, None)
+        os.environ["TOOL_GATEWAY_URL"] = ""
 
     def teardown_method(self):
         """Reset client after each test."""
         import tools.web_tools
         tools.web_tools._firecrawl_client = None
-        for key in ("FIRECRAWL_API_KEY", "FIRECRAWL_API_URL"):
+        tools.web_tools._firecrawl_client_config = None
+        for key in (
+            "FIRECRAWL_API_KEY",
+            "FIRECRAWL_API_URL",
+            "TOOL_GATEWAY_URL",
+            "TOOL_GATEWAY_USER_TOKEN",
+        ):
             os.environ.pop(key, None)
 
     # ── Configuration matrix ─────────────────────────────────────────
@@ -70,6 +83,31 @@ class TestFirecrawlClientConfig:
             from tools.web_tools import _get_firecrawl_client
             with pytest.raises(ValueError, match="FIRECRAWL_API_KEY"):
                 _get_firecrawl_client()
+
+    def test_tool_gateway_mode_with_nous_token(self):
+        """Gateway mode is used when direct Firecrawl is not configured."""
+        with patch.dict(os.environ, {"TOOL_GATEWAY_URL": "https://gateway.example/"}):
+            with patch("tools.web_tools._read_nous_access_token", return_value="nous-token"):
+                with patch("tools.web_tools.Firecrawl") as mock_fc:
+                    from tools.web_tools import _get_firecrawl_client
+                    result = _get_firecrawl_client()
+                    mock_fc.assert_called_once_with(
+                        api_key="nous-token",
+                        api_url="https://gateway.example/api/tools/firecrawl",
+                    )
+                    assert result is mock_fc.return_value
+
+    def test_direct_mode_is_preferred_over_tool_gateway(self):
+        """Explicit Firecrawl config should win over the gateway fallback."""
+        with patch.dict(os.environ, {
+            "FIRECRAWL_API_KEY": "fc-test",
+            "TOOL_GATEWAY_URL": "https://gateway.example",
+        }):
+            with patch("tools.web_tools._read_nous_access_token", return_value="nous-token"):
+                with patch("tools.web_tools.Firecrawl") as mock_fc:
+                    from tools.web_tools import _get_firecrawl_client
+                    _get_firecrawl_client()
+                    mock_fc.assert_called_once_with(api_key="fc-test")
 
     # ── Singleton caching ────────────────────────────────────────────
 
@@ -327,5 +365,10 @@ class TestCheckWebApiKey:
             "FIRECRAWL_API_KEY": "fc-test",
             "TAVILY_API_KEY": "tvly-test",
         }):
+            from tools.web_tools import check_web_api_key
+            assert check_web_api_key() is True
+
+    def test_tool_gateway_returns_true(self):
+        with patch("tools.web_tools._read_nous_access_token", return_value="nous-token"):
             from tools.web_tools import check_web_api_key
             assert check_web_api_key() is True
