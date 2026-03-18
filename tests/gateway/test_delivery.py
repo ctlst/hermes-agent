@@ -1,7 +1,7 @@
 """Tests for the delivery routing module."""
 
 from gateway.config import Platform, GatewayConfig, PlatformConfig, HomeChannel
-from gateway.delivery import DeliveryRouter, DeliveryTarget, parse_deliver_spec
+from gateway.delivery import DeliveryRouter, DeliveryTarget, parse_deliver_spec, parse_platform_target_ref
 from gateway.session import SessionSource
 
 
@@ -39,6 +39,32 @@ class TestParseTargetPlatformChat:
     def test_unknown_platform(self):
         target = DeliveryTarget.parse("unknown_platform")
         assert target.platform == Platform.LOCAL
+
+
+class TestParsePlatformTargetRef:
+    def test_whatsapp_jid_is_explicit(self):
+        assert parse_platform_target_ref("whatsapp", "12345678901234@lid") == (
+            "12345678901234@lid",
+            None,
+            True,
+        )
+
+    def test_signal_phone_is_explicit(self):
+        assert parse_platform_target_ref("signal", "+15551234567") == (
+            "+15551234567",
+            None,
+            True,
+        )
+
+    def test_email_address_is_explicit(self):
+        assert parse_platform_target_ref("email", "alice@example.com") == (
+            "alice@example.com",
+            None,
+            True,
+        )
+
+    def test_human_label_is_not_explicit(self):
+        assert parse_platform_target_ref("whatsapp", "Alice (dm)") == (None, None, False)
 
 
 class TestParseDeliverSpec:

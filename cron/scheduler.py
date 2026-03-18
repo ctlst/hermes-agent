@@ -62,6 +62,42 @@ def _resolve_origin(job: dict) -> Optional[dict]:
     return None
 
 
+def _resolve_explicit_delivery_target(platform_name: str, target_ref: str) -> dict:
+    """Resolve an explicit platform target, including display labels from the channel directory."""
+    from gateway.channel_directory import resolve_channel_name
+    from gateway.delivery import parse_platform_target_ref
+
+    platform_name = platform_name.strip().lower()
+    target_ref = target_ref.strip()
+
+    chat_id, thread_id, is_explicit = parse_platform_target_ref(platform_name, target_ref)
+    if is_explicit:
+        return {
+            "platform": platform_name,
+            "chat_id": chat_id,
+            "thread_id": thread_id,
+        }
+
+    try:
+        resolved = resolve_channel_name(platform_name, target_ref)
+    except Exception:
+        resolved = None
+
+    if resolved:
+        chat_id, thread_id, is_explicit = parse_platform_target_ref(platform_name, resolved)
+        return {
+            "platform": platform_name,
+            "chat_id": chat_id if is_explicit else resolved,
+            "thread_id": thread_id,
+        }
+
+    return {
+        "platform": platform_name,
+        "chat_id": target_ref,
+        "thread_id": None,
+    }
+
+
 def _resolve_delivery_target(job: dict) -> Optional[dict]:
     """Resolve the concrete auto-delivery target for a cron job, if any."""
     deliver = job.get("deliver", "local")
@@ -80,12 +116,8 @@ def _resolve_delivery_target(job: dict) -> Optional[dict]:
         }
 
     if ":" in deliver:
-        platform_name, chat_id = deliver.split(":", 1)
-        return {
-            "platform": platform_name,
-            "chat_id": chat_id,
-            "thread_id": None,
-        }
+        platform_name, target_ref = deliver.split(":", 1)
+        return _resolve_explicit_delivery_target(platform_name, target_ref)
 
     platform_name = deliver
     if origin and origin.get("platform") == platform_name:

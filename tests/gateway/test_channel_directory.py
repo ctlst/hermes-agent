@@ -119,6 +119,13 @@ class TestResolveChannelName:
         with self._setup(tmp_path, platforms):
             assert resolve_channel_name("telegram", "Coaching Chat / topic 17585") == "-1001:17585"
 
+    def test_display_label_resolves_to_channel_id(self, tmp_path):
+        platforms = {
+            "whatsapp": [{"id": "12345678901234@lid", "name": "Alice", "type": "dm"}]
+        }
+        with self._setup(tmp_path, platforms):
+            assert resolve_channel_name("whatsapp", "Alice (dm)") == "12345678901234@lid"
+
 
 class TestBuildFromSessions:
     def _write_sessions(self, tmp_path, sessions_data):

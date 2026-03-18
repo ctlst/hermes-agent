@@ -12,9 +12,10 @@ import re
 import ssl
 import time
 
+from gateway.delivery import parse_platform_target_ref
+
 logger = logging.getLogger(__name__)
 
-_TELEGRAM_TOPIC_TARGET_RE = re.compile(r"^\s*(-?\d+)(?::(\d+))?\s*$")
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".3gp"}
 _AUDIO_EXTS = {".ogg", ".opus", ".mp3", ".wav", ".m4a"}
@@ -86,7 +87,7 @@ def _handle_send(args):
     thread_id = None
 
     if target_ref:
-        chat_id, thread_id, is_explicit = _parse_target_ref(platform_name, target_ref)
+        chat_id, thread_id, is_explicit = parse_platform_target_ref(platform_name, target_ref)
     else:
         is_explicit = False
 
@@ -96,7 +97,7 @@ def _handle_send(args):
             from gateway.channel_directory import resolve_channel_name
             resolved = resolve_channel_name(platform_name, target_ref)
             if resolved:
-                chat_id, thread_id, _ = _parse_target_ref(platform_name, resolved)
+                chat_id, thread_id, _ = parse_platform_target_ref(platform_name, resolved)
             else:
                 return json.dumps({
                     "error": f"Could not resolve '{target_ref}' on {platform_name}. "
@@ -186,18 +187,6 @@ def _handle_send(args):
         return json.dumps(result)
     except Exception as e:
         return json.dumps({"error": f"Send failed: {e}"})
-
-
-def _parse_target_ref(platform_name: str, target_ref: str):
-    """Parse a tool target into chat_id/thread_id and whether it is explicit."""
-    if platform_name == "telegram":
-        match = _TELEGRAM_TOPIC_TARGET_RE.fullmatch(target_ref)
-        if match:
-            return match.group(1), match.group(2), True
-    if target_ref.lstrip("-").isdigit():
-        return target_ref, None, True
-    return None, None, False
-
 
 def _describe_media_for_mirror(media_files):
     """Return a human-readable mirror summary when a message only contains media."""

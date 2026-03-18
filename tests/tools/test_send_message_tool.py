@@ -16,12 +16,12 @@ def _run_async_immediately(coro):
     return asyncio.run(coro)
 
 
-def _make_config():
-    telegram_cfg = SimpleNamespace(enabled=True, token="***", extra={})
+def _make_config(platform=Platform.TELEGRAM, *, token="***", extra=None):
+    platform_cfg = SimpleNamespace(enabled=True, token=token, extra=extra or {})
     return SimpleNamespace(
-        platforms={Platform.TELEGRAM: telegram_cfg},
+        platforms={platform: platform_cfg},
         get_home_channel=lambda _platform: None,
-    ), telegram_cfg
+    ), platform_cfg
 
 
 def _install_telegram_mock(monkeypatch, bot):
@@ -200,6 +200,65 @@ class TestSendMessageTool:
             "-1001",
             "hello",
             thread_id="17585",
+            media_files=[],
+        )
+
+    def test_resolved_whatsapp_display_label_uses_resolved_jid(self):
+        config, whatsapp_cfg = _make_config(Platform.WHATSAPP, token=None, extra={"bridge_port": 3000})
+
+        with patch("gateway.config.load_gateway_config", return_value=config), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch("gateway.channel_directory.resolve_channel_name", return_value="12345678901234@lid"), \
+             patch("model_tools._run_async", side_effect=_run_async_immediately), \
+             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
+             patch("gateway.mirror.mirror_to_session", return_value=True):
+            result = json.loads(
+                send_message_tool(
+                    {
+                        "action": "send",
+                        "target": "whatsapp:Alice (dm)",
+                        "message": "hello",
+                    }
+                )
+            )
+
+        assert result["success"] is True
+        send_mock.assert_awaited_once_with(
+            Platform.WHATSAPP,
+            whatsapp_cfg,
+            "12345678901234@lid",
+            "hello",
+            thread_id=None,
+            media_files=[],
+        )
+
+    def test_explicit_whatsapp_jid_bypasses_channel_name_resolution(self):
+        config, whatsapp_cfg = _make_config(Platform.WHATSAPP, token=None, extra={"bridge_port": 3000})
+
+        with patch("gateway.config.load_gateway_config", return_value=config), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch("gateway.channel_directory.resolve_channel_name") as resolve_mock, \
+             patch("model_tools._run_async", side_effect=_run_async_immediately), \
+             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
+             patch("gateway.mirror.mirror_to_session", return_value=True):
+            result = json.loads(
+                send_message_tool(
+                    {
+                        "action": "send",
+                        "target": "whatsapp:12345678901234@lid",
+                        "message": "hello",
+                    }
+                )
+            )
+
+        assert result["success"] is True
+        resolve_mock.assert_not_called()
+        send_mock.assert_awaited_once_with(
+            Platform.WHATSAPP,
+            whatsapp_cfg,
+            "12345678901234@lid",
+            "hello",
+            thread_id=None,
             media_files=[],
         )
 

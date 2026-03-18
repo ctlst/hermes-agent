@@ -176,6 +176,19 @@ def load_directory() -> Dict[str, Any]:
         return {"updated_at": None, "platforms": {}}
 
 
+def _channel_match_names(channel: Dict[str, Any]) -> List[str]:
+    """Return accepted lookup labels for a channel entry."""
+    name = str(channel.get("name") or "").strip()
+    if not name:
+        return []
+
+    names = [name.lower()]
+    channel_type = str(channel.get("type") or "").strip().lower()
+    if channel_type:
+        names.append(f"{name} ({channel_type})".lower())
+    return names
+
+
 def resolve_channel_name(platform_name: str, name: str) -> Optional[str]:
     """
     Resolve a human-friendly channel name to a numeric ID.
@@ -194,7 +207,7 @@ def resolve_channel_name(platform_name: str, name: str) -> Optional[str]:
 
     # 1. Exact name match
     for ch in channels:
-        if ch["name"].lower() == query:
+        if query in _channel_match_names(ch):
             return ch["id"]
 
     # 2. Guild-qualified match for Discord ("GuildName/channel")
@@ -206,7 +219,10 @@ def resolve_channel_name(platform_name: str, name: str) -> Optional[str]:
                 return ch["id"]
 
     # 3. Partial prefix match (only if unambiguous)
-    matches = [ch for ch in channels if ch["name"].lower().startswith(query)]
+    matches = [
+        ch for ch in channels
+        if any(candidate.startswith(query) for candidate in _channel_match_names(ch))
+    ]
     if len(matches) == 1:
         return matches[0]["id"]
 

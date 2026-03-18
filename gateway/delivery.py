@@ -9,6 +9,7 @@ Routes messages to the appropriate destination based on:
 """
 
 import logging
+import re
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
@@ -21,9 +22,34 @@ logger = logging.getLogger(__name__)
 
 MAX_PLATFORM_OUTPUT = 4000
 TRUNCATED_VISIBLE = 3800
+_TELEGRAM_TOPIC_TARGET_RE = re.compile(r"^\s*(-?\d+)(?::(\d+))?\s*$")
+_PHONE_TARGET_RE = re.compile(r"^\+?\d+$")
+_EMAIL_TARGET_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 from .config import Platform, GatewayConfig
 from .session import SessionSource
+
+
+def parse_platform_target_ref(platform_name: str, target_ref: str):
+    """Parse a platform target into chat_id/thread_id and whether it is explicit."""
+    platform_name = str(platform_name or "").strip().lower()
+    target_ref = str(target_ref or "").strip()
+
+    if platform_name == "telegram":
+        match = _TELEGRAM_TOPIC_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), match.group(2), True
+    if target_ref.lstrip("-").isdigit():
+        return target_ref, None, True
+    if platform_name in {"signal", "sms"} and _PHONE_TARGET_RE.fullmatch(target_ref):
+        return target_ref, None, True
+    if platform_name == "signal" and target_ref.startswith("group:"):
+        return target_ref, None, True
+    if platform_name == "email" and _EMAIL_TARGET_RE.fullmatch(target_ref):
+        return target_ref, None, True
+    if platform_name == "whatsapp" and "@" in target_ref and not any(ch.isspace() for ch in target_ref):
+        return target_ref, None, True
+    return None, None, False
 
 
 @dataclass
